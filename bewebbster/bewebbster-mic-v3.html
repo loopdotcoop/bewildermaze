@@ -158,8 +158,9 @@
     // Draw an oscilloscope of the audio input
     var draw = function () {
 
-      stereoAnalyser.getByteTimeDomainData(dataArrayA, dataArrayB);
-      // analyserA.getByteTimeDomainData(dataArrayA);
+      // stereoAnalyser.getByteTimeDomainData(dataArrayA, dataArrayB);
+      analyserA.getByteTimeDomainData(dataArrayA);
+      analyserB.getByteTimeDomainData(dataArrayA);
 
       var doTriggerA = drawOne(ctxA, dataArrayA, widthA, heightA);
       var doTriggerB = drawOne(ctxB, dataArrayB, widthB, heightB);
