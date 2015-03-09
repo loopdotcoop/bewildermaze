@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="X-UA-Compatible" content="chrome=1" />
+  <meta http-equiv='Content-Type' content='text/html;charset=utf-8'/>
+  <title>Canvas Path Test</title>
+
+  <link rel='stylesheet' type='text/css' href='../lib/x3dom.css'>
+  <link type="text/css" href="../lib/jquery-ui-1.11.3/jquery-ui.css" rel="stylesheet">
+</head>
+<body style="background-color:#111; color: #999;">
+
+  <audio src="bewhalyer-bubble1.mp3" id="audioA1"></audio>
+  <audio src="bewhalyer-bubble2.mp3" id="audioB1"></audio>
+
+  <input id="cameraAngle" type="range" value="1" min="0.05" max="3" step="0.05" style="width:90%"></input>
+  <div   id="cameraAngleDisplay" style="color:#999">1</div>
+
+  <x3d id="aScene" showStat="false" showLog="false" x="0px" y="0px" width="500px" height="640px">
+    <scene>
+      <background skyColor='0 0 0'></background>
+      <NavigationInfo type="examine"></NavigationInfo>
+      <Viewpoint id="viewpoint" position="2.09873 -1.08607 .5" orientation="0.75664 0.47185 0.45261 1.83860" description=""></Viewpoint>
+      <shape>
+        <appearance>
+          <texture hideChildren="false" id="textureA">
+            <canvas width='256' height='256' id='canvasA' style="position:absolute; top:20px;left:520px;">
+          </texture>
+          <material diffuseColor='0.6 0.9 0.5'></material>  
+        </appearance>
+        <cone></cone>
+      </shape>
+      <shape>
+        <appearance>
+          <texture hideChildren="false" id="textureB">
+            <canvas width='256' height='256' id='canvasB' style="position:absolute; top:300px; left:520px;">
+          </texture>
+          <material diffuseColor='0.6 0.9 0.5'></material>  
+        </appearance>
+        <sphere></sphere>
+      </shape>
+    </scene>
+  </x3d>
+    
+  <script src="../lib/x3dom.js"></script>
+  <script src="../lib/stereo-analyser-node.js"></script>
+  <script src="../lib/jquery-1.11.2.min.js"></script>
+  <script src="../lib/jquery-ui-1.11.3/jquery-ui.min.js"></script>
+
+  <script>
+
+  // DOM ready
+  $(function () {
+    var $cameraAngle        = $('#cameraAngle');
+    var $cameraAngleDisplay = $('#cameraAngleDisplay');
+    var $viewpoint          = $('#viewpoint');
+    var onCameraAngleChange = function () {
+      $viewpoint.attr( 'fieldOfView', $cameraAngle.val() );
+      $cameraAngleDisplay.text( $cameraAngle.val() );
+    }
+
+    $cameraAngle
+     .change(onCameraAngleChange);
+    onCameraAngleChange();
+
+  });
+
+
+
+
+  // https://developer.mozilla.org/en-US/docs/Web/API/MediaStreamAudioSourceNode
+  // https://developer.mozilla.org/en-US/docs/Web/API/AnalyserNode
+
+  !function () {
+
+    // Fork getUserMedia for multiple browser versions
+    navigator.getUserMedia = (navigator.getUserMedia ||
+                              navigator.webkitGetUserMedia ||
+                              navigator.mozGetUserMedia ||
+                              navigator.msGetUserMedia);
+
+
+    // Declare variables with app scope
+    var audioCtx;
+    var splitter;
+    var stereoAnalyser;
+    var analyserA;
+    var analyserB;
+    var bufferLength;
+    var dataArrayA;
+    var dataArrayB;
+
+    var $audioA1;
+    var sourceA1;
+    var $audioB1;
+    var sourceB1;
+
+    var $textureA;
+    var $canvasA;
+    var ctxA;
+    var widthA;
+    var heightA;
+
+    var $textureB;
+    var $canvasB;
+    var ctxB;
+    var widthB;
+    var heightB;
+
+
+    var drawOne = function (ctx, dataArray, width, height) {
+
+      ctx.fillStyle = 'rgb(0, 0, 0)';
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgb(0, 255, 0)';
+
+      ctx.beginPath();
+
+      var sliceWidth = width * 1.0 / bufferLength;
+      var x = 0;
+      var doTrigger = false;
+
+      for(var i=0; i<bufferLength; i++) {
+
+        var v = dataArrayA[i] / 128.0;
+        var y = v * height / 2;
+
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+
+        x += sliceWidth;
+
+        if (1.5 < v) { doTrigger = true; }
+      }
+
+      ctx.lineTo(width, height / 2);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgb(255, 255, 0)';
+      ctx.fill();
+
+
+      ctx.moveTo(width / 2, 0);
+      var sliceHeight = height * 1.0 / bufferLength;
+      var y = 0;
+
+      for(var i=0; i<bufferLength; i++) {
+
+        var v = dataArrayA[i] / 128.0;
+        var x = v * width / 2;
+
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+
+        y += sliceHeight;
+      }
+
+      ctx.lineTo(width / 2, height);
+      ctx.stroke();
+      ctx.fillStyle = 'rgb(255, 0, 255)';
+      ctx.fill();
+
+
+      return doTrigger;
+    }
+
+
+    // Draw an oscilloscope of the audio input
+    var draw = function () {
+
+      // stereoAnalyser.getByteTimeDomainData(dataArrayA, dataArrayB);
+      analyserA.getByteTimeDomainData(dataArrayA);
+      analyserB.getByteTimeDomainData(dataArrayB);
+
+      var doTriggerA = drawOne(ctxA, dataArrayA, widthA, heightA);
+      var doTriggerB = drawOne(ctxB, dataArrayB, widthB, heightB);
+
+      // FIXME: Not the final interface
+      $textureA[0]._x3domNode.invalidateGLObject();
+      $textureB[0]._x3domNode.invalidateGLObject();
+
+      if (doTriggerA && $audioA1[0].paused) { $audioA1[0].play(); /*console.log('play A');*/ }
+      if (doTriggerA && ! $audioA1[0].paused) { /*console.log('already playing A!');*/ }
+      if (doTriggerB && $audioB1[0].paused) { $audioB1[0].play(); /*console.log('play B');*/ }
+      if (doTriggerB && ! $audioB1[0].paused) { /*console.log('already playing B!');*/ }
+
+      requestAnimationFrame(draw);
+    };
+
+
+	  // DOM ready
+    $(function () {
+
+      // Init the canvases
+      $textureA = $('#textureA');
+      $canvasA  = $('#canvasA');
+      widthA  = $canvasA.width();
+      heightA = $canvasA.height();
+
+      ctxA      = $canvasA[0].getContext('2d');
+      ctxA.fillStyle = "rgb(200,0,0)";  
+      ctxA.fillRect(0, 0, 256, 256);
+
+      $textureB = $('#textureB');
+      $canvasB  = $('#canvasB');
+      widthB  = $canvasB.width();
+      heightB = $canvasB.height();
+
+      ctxB      = $canvasB[0].getContext('2d');
+      ctxB.fillStyle = "rgb(0,200,0)";  
+      ctxB.fillRect(0, 0, 256, 256);
+
+      // Init the audio context
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Init audio samples
+      $audioA1 = $('#audioA1');
+      $audioB1 = $('#audioB1');
+
+      // Get access to the audio-input
+      if (! navigator.getUserMedia) {
+        throw new Error('getUserMedia not supported on your browser!');
+      }
+      navigator.getUserMedia (
+
+        // Constraints
+        { audio: true, video: false },
+
+        // Success callback
+        function(stream) { // https://developer.mozilla.org/en-US/docs/Web/API/MediaStream
+
+          // console.log( stream.getAudioTracks() );
+
+          // Feed the HTMLMediaElement into a MediaStreamAudioSourceNode
+          // http://stackoverflow.com/a/23486702
+          window.streamSource = audioCtx.createMediaStreamSource(stream, 2);
+          // window.streamSource.channelCountMode      = 'explicit'; //@todo remove?
+          // window.streamSource.channelInterpretation = 'discrete'; //@todo remove?
+          console.log(window.streamSource.channelCount);
+
+          // Set up a stereo audio analyser
+          // stereoAnalyser = new StereoAnalyserNode(audioCtx);
+          // stereoAnalyser.fftSize = 2048;
+          // bufferLength = stereoAnalyser.frequencyBinCount;
+          // dataArrayA = new Uint8Array(bufferLength);
+          // dataArrayB = new Uint8Array(bufferLength);
+          // window.streamSource.connect(stereoAnalyser);
+
+          // Set up the audio analysers
+          analyserA = audioCtx.createAnalyser();
+          analyserA.fftSize = 2048;
+          bufferLength = analyserA.frequencyBinCount;
+          dataArrayA = new Uint8Array(bufferLength);
+          // analyserA.getByteTimeDomainData(dataArrayA);
+
+          analyserB = audioCtx.createAnalyser();
+          analyserB.fftSize = 2048;
+          bufferLength = analyserB.frequencyBinCount;
+          dataArrayB = new Uint8Array(bufferLength);
+          // analyserB.getByteTimeDomainData(dataArrayB);
+
+          // Split the streaming audio input into left and right channels
+          splitter = audioCtx.createChannelSplitter(2);
+          window.streamSource.connect(splitter);
+
+          // Connect the left and right streaming audio inputs to the analysers
+          splitter.connect(analyserA, 0);
+          splitter.connect(analyserB, 1);
+
+          // Begin the canvas-draw loops
+          draw();
+          // drawB();
+        },
+
+        // Error callback
+        function(err) {
+          console.log('The following gUM error occured: ' + err);
+        }
+      );
+
+
+    });
+
+  }();
+  </script>
+</body>
+
+</html>
